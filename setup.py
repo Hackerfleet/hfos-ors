@@ -60,7 +60,7 @@ This software package is a plugin module for HFOS.
     dependency_links=[],
     install_requires=[
         'isomer>=1.0',
-        'openrouteservice-py>=2.2.1'
+        'openrouteservice>=2.2.1'
     ],
     entry_points="""[isomer.components]
     ors=isomer.ors.ors:ORSService
