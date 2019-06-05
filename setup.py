@@ -57,7 +57,9 @@ A query interface for the OpenRouteService API.
 
 This software package is a plugin module for HFOS.
 """,
-    dependency_links=[],
+    dependency_links=[
+        'openrouteservice-py>=2.2.1'
+    ],
     install_requires=[
         'isomer>=1.0',
     ],
