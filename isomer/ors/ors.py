@@ -31,18 +31,16 @@ API wrapper for OpenRouteService.
 """
 
 import socket
-import os
-
 import json
-
 import openrouteservice
-
-from circuits import Worker, task, Event
-from isomer.logger import debug, verbose
-
-from isomer.component import ConfigurableController
+import click
 
 from urllib.request import urlopen
+from circuits import Worker, task, Event
+
+
+from isomer.logger import debug, verbose, critical, isolog as log, set_verbosity, set_logfile
+from isomer.component import ConfigurableController
 
 
 def get_query(query):
@@ -96,15 +94,17 @@ class ORSService(ConfigurableController):
 
     channel = '/ors'
 
-    def __init__(self, *args):
+    def __init__(self, *args, **kwargs):
         """
 
         :param kwargs:
         """
-        super(ORSService, self).__init__('ORS', *args)
+        super(ORSService, self).__init__('ORS', *args, **kwargs)
 
-        # Insert your api key here, for now:
-        self.key = ''
+        self.key = kwargs.get('api_key', None)
+
+        if self.key is None:
+            self.log('No api key defined!', lvl=critical)
 
         self.target = (13.40955, 52.52079)
 
@@ -186,3 +186,45 @@ class ORSService(ConfigurableController):
         self.log(address, pretty=True, lvl=debug)
 
         return json.dumps(address)
+
+
+@click.command()
+@click.argument('api-key', envvar='ORS_API_KEY')
+@click.option('--debug', '-d', help='Load a very verbose debugger, too', default=False)
+@click.option('--host', default='127.0.0.1')
+@click.option('--port', default=8057)
+@click.pass_context
+def ors_standalone(ctx, api_key, debug, host, port):
+    from circuits import Manager, Debugger
+    from circuits.web import Server
+
+    set_logfile('/tmp', 'mini')
+    set_verbosity(5)
+
+    app = Manager()
+
+    if debug:
+        debugger = Debugger().register(app)
+
+    ors_controller = ORSService(api_key= api_key, no_db=True).register(app)
+
+    try:
+        server = Server(
+            (host, port),
+            display_banner=False,
+            secure=False,
+        ).register(app)
+    except PermissionError as e:
+        if port <= 1024:
+            log("Could not open privileged port (%i), check permissions!"
+                % port, e, lvl=critical,
+                )
+        else:
+            log("Could not open port (%i):" % port, e, lvl=critical)
+    except OSError as e:
+        if e.errno == 98:
+            log("Port (%i) is already opened!" % port, lvl=critical)
+        else:
+            log("Could not open port (%i):" % port, e, lvl=critical)
+
+    app.run()

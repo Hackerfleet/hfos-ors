@@ -65,6 +65,8 @@ This software package is a plugin module for HFOS.
     ors=isomer.ors.ors:ORSService
 [isomer.schemata]
 [isomer.provisions]
+[console_scripts]
+      ors-standalone=isomer.ors.ors:ors_standalone
     """,
     test_suite="tests.main.main",
 )
