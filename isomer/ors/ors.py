@@ -36,6 +36,7 @@ import openrouteservice
 import click
 
 from urllib.request import urlopen
+from urllib.request import unquote
 from circuits import Worker, task, Event
 
 
@@ -106,7 +107,7 @@ class ORSService(ConfigurableController):
         if self.key is None:
             self.log('No api key defined!', lvl=critical)
 
-        self.target = (13.40955, 52.52079)
+        self.target = (12.74137258529663, 53.309627534617626)
 
         # self.worker = Worker(process=False, workers=2,
         #                     channel="orsworkers").register(self)
@@ -118,14 +119,18 @@ class ORSService(ConfigurableController):
     # def cli_test_ors(self, event, *args):
     #    self.log('Testing ORS API data loader..')
 
-    def route(self, arg1, arg2):
-        self.log('I got a query:', arg1, arg2, pretty=True, lvl=debug)
+    def route(self, arg1):
+        self.log('I got a query:', arg1, pretty=True, lvl=debug)
 
         profile = 'driving-car'
         instructions = False
         simplify = True
 
-        coords = ((arg2, arg1), self.target)
+        query = json.loads(unquote(arg1))
+
+        self.log(query, pretty=True)
+
+        coords = query
 
         client = openrouteservice.Client(
             key=self.key)
@@ -138,6 +143,12 @@ class ORSService(ConfigurableController):
             geometry_simplify=simplify
         )
 
+        self.response.headers['Content-Type'] = 'application/json'
+        # self.response.headers['X-Content-Type-Options'] = 'nosniff'
+        self.response.headers['Access-Control-Allow-Headers'] = '*'
+        self.response.headers['Access-Control-Allow-Origin'] = '*'
+
+        self.log(self.response.headers, pretty=True, lvl=critical)
         return json.dumps(routes)
 
     def revgeocode(self, arg1, arg2):
@@ -166,6 +177,7 @@ class ORSService(ConfigurableController):
         return json.dumps(address)
 
     def geocode(self, place):
+        place = unquote(place)
         self.log('I got a geocode query:', place, pretty=True, lvl=debug)
 
         client = openrouteservice.Client(
