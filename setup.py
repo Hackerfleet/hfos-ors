@@ -49,6 +49,7 @@ setup(
         'Topic :: Scientific/Engineering :: GIS'
     ],
     packages=find_packages(),
+    package_data={'hfos-ors': ['../docs/*', '../frontend/*']},
     include_package_data=True,
     long_description="""HFOS - ORS
 ==========
@@ -71,3 +72,5 @@ This software package is a plugin module for HFOS.
     """,
     test_suite="tests.main.main",
 )
+
+
