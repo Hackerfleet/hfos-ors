@@ -18,8 +18,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-__author__ = "Heiko 'riot' Weinen"
-__license__ = "AGPLv3"
 
 """
 
@@ -40,8 +38,10 @@ from urllib.request import unquote
 from circuits import Worker, task, Event
 
 
+from isomer.events.system import authorized_event
+from isomer.events.client import send
 from isomer.logger import debug, verbose, critical, isolog as log, set_verbosity, set_logfile
-from isomer.component import ConfigurableController
+from isomer.component import ConfigurableController, handler
 
 
 def get_query(query):
@@ -84,7 +84,131 @@ class cli_test_ors(Event):
     pass
 
 
+class geo_lookup(authorized_event):
+    pass
+
+
+class geo_lookup_reverse(authorized_event):
+    pass
+
+
 class ORSService(ConfigurableController):
+    """
+    ORS API loader component
+    """
+
+    configprops = {
+        'ors_api_key': {
+            'type': 'string'
+        }
+    }
+
+    channel = 'isomer-web'
+
+    def __init__(self, *args, **kwargs):
+        """
+
+        :param kwargs:
+        """
+        super(ORSService, self).__init__('ORS', *args, **kwargs)
+
+        if self.config.ors_api_key is None:
+            self.log('No api key defined!', lvl=critical)
+
+        self.target = (12.74137258529663, 53.309627534617626)
+
+        # self.worker = Worker(process=False, workers=2,
+        #                     channel="orsworkers").register(self)
+
+        # self.fire(
+        #    cli_register_event('test_orsloader', cli_test_ors), 'isomer-web')
+
+    # @handler("cli_test_ors", channel='isomer-web')
+    # def cli_test_ors(self, event, *args):
+    #    self.log('Testing ORS API data loader..')
+
+
+    @handler(geo_lookup)
+    def geo_lookup(self, event):
+        """Performs a geocode lookup on the supplied data"""
+
+        place = event.data
+
+        self.log('Geocode request:', place)
+
+        client = openrouteservice.Client(
+            key=self.config.ors_api_key)
+        address = openrouteservice.client.pelias_autocomplete(
+            client,
+            text=place
+        )
+
+        self.log(address, pretty=True, lvl=debug)
+
+        response = {
+            'component': 'isomer.ors.ors',
+            'action': 'geo_lookup',
+            'data': address
+        }
+
+        self.fireEvent(send(event.client.uuid, response))
+
+
+    def route(self, arg1):
+        self.log('I got a query:', arg1, pretty=True, lvl=debug)
+
+        profile = 'driving-car'
+        instructions = False
+        simplify = True
+
+        query = json.loads(unquote(arg1))
+
+        self.log(query, pretty=True)
+
+        coords = query
+
+        client = openrouteservice.Client(
+            key=self.config.ors_api_key)
+        routes = openrouteservice.client.directions(
+            client,
+            coordinates=coords,
+            profile=profile,
+            format='geojson',
+            instructions=instructions,
+            geometry_simplify=simplify
+        )
+
+        return json.dumps(routes)
+
+    @handler(geo_lookup_reverse)
+    def geo_lookup_reverse(self, event):
+        """Performs a reverse geocode lookup on the supplied coordinate"""
+        self.log('Reverse geocode request:', event.data)
+
+        coordinates = event.data['lng'], event.data['lat']
+
+        self.log("Coordinates:", coordinates)
+
+        client = openrouteservice.Client(
+            key=self.config.ors_api_key)
+        address = openrouteservice.client.pelias_reverse(
+            client,
+            coordinates,
+            size=1
+        )
+
+        self.log(address, pretty=True, lvl=debug)
+        response = {
+            'component': 'isomer.ors.ors',
+            'action': 'geo_lookup_reverse',
+            'data': address
+        }
+
+        self.fireEvent(send(event.client.uuid, response))
+
+
+# TODO: Integrate this, probably by automating REST access
+class RESTORSService(ConfigurableController):
     """
     ORS API loader component
     """
@@ -100,7 +224,7 @@ class ORSService(ConfigurableController):
 
         :param kwargs:
         """
-        super(ORSService, self).__init__('ORS', *args, **kwargs)
+        super(RESTORSService, self).__init__('REST-ORS', *args, **kwargs)
 
         self.key = kwargs.get('api_key', None)
 
@@ -118,6 +242,35 @@ class ORSService(ConfigurableController):
     # @handler("cli_test_ors", channel='isomer-web')
     # def cli_test_ors(self, event, *args):
     #    self.log('Testing ORS API data loader..')
+
+    @handler(geo_lookup_reverse)
+    def geo_lookup_reverse(self, event):
+        """Performs a reverse geocode lookup on the supplied coordinate"""
+        self.log('Reverse geocode request:', event.data)
+
+        lookup = self.revgeocode(event.data['lat'], event.data['lon'])
+        response = {
+            'component': 'isomer.ors.ors',
+            'action': 'geo_lookup_reverse',
+            'data': lookup
+        }
+
+        self.fireEvent(send(event.client, response))
+
+    @handler(geo_lookup)
+    def geo_lookup(self, event):
+        """Performs a geocode lookup on the supplied data"""
+
+        self.log('Geocode request:', event.data)
+
+        lookup = self.geocode(event.data)
+        response = {
+            'component': 'isomer.ors.ors',
+            'action': 'geo_lookup',
+            'data': lookup
+        }
+
+        self.fireEvent(send(event.client, response))
 
     def route(self, arg1):
         self.log('I got a query:', arg1, pretty=True, lvl=debug)
@@ -218,7 +371,7 @@ def ors_standalone(ctx, api_key, debug, host, port):
     if debug:
         debugger = Debugger().register(app)
 
-    ors_controller = ORSService(api_key= api_key, no_db=True).register(app)
+    ors_controller = RESTORSService(api_key= api_key, no_db=True).register(app)
 
     try:
         server = Server(
